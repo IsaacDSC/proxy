@@ -1,0 +1,21 @@
+{
+    "routes": [
+        {
+            "match": "PATCH /receivables",
+            "rewrite": "PUT /v2/receivables",
+            "target": "http://localhost:8000"
+        },
+        {
+            "match": "PATCH /receivables/*",
+            "rewrite": "PUT /v2/receivables/*",
+            "target": "http://localhost:8000"
+        },
+        {
+            "match": "PATCH /receivables",
+            "header_name": "X-Header-Redirect",
+            "header_value": "journey-x",
+            "rewrite": "POST /v3/receivables",
+            "target": "http://localhost:8000"
+        }
+    ]
+}
