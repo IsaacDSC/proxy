@@ -61,6 +61,7 @@ func Forward(route *config.CompiledRoute, w http.ResponseWriter, r *http.Request
 			outReq.Host = targetURL.Host
 			outReq.Method = method
 			removeHopByHopHeaders(outReq.Header)
+			applyRenameHeaders(outReq.Header, route.RenameHeaders)
 		},
 		Transport: route.Transport,
 		ErrorHandler: func(_ http.ResponseWriter, _ *http.Request, err error) {
@@ -82,6 +83,20 @@ func removeHopByHopHeaders(headers http.Header) {
 	for key := range headers {
 		if _, ok := hopByHopHeaders[http.CanonicalHeaderKey(key)]; ok {
 			headers.Del(key)
+		}
+	}
+}
+
+// applyRenameHeaders renames headers according to the provided rules.
+// For each rule it copies the value from the current header name to the new one and deletes the old key.
+// Rules with a missing current header are silently skipped.
+func applyRenameHeaders(headers http.Header, rules []config.RenameHeaderRule) {
+	for _, rule := range rules {
+		current := http.CanonicalHeaderKey(rule.Current)
+		newKey := http.CanonicalHeaderKey(rule.New)
+		if values := headers[current]; len(values) > 0 {
+			headers[newKey] = values
+			delete(headers, current)
 		}
 	}
 }

@@ -135,6 +135,41 @@ func TestForwardWildcardRewrite(t *testing.T) {
 	}
 }
 
+func TestForwardRenameHeader(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Header-Redirect") != "" {
+			t.Fatalf("old header X-Header-Redirect should have been removed")
+		}
+		if r.Header.Get("X-Header-Redirect-New") != "journey-x" {
+			t.Fatalf("expected X-Header-Redirect-New to be journey-x, got %q", r.Header.Get("X-Header-Redirect-New"))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "http://proxy.local/v3/receivables", nil)
+	req.Header.Set("X-Header-Redirect", "journey-x")
+
+	rec := httptest.NewRecorder()
+	route := &config.CompiledRoute{
+		Route: config.Route{
+			Target: backend.URL,
+			RenameHeaders: []config.RenameHeaderRule{
+				{Current: "X-Header-Redirect", New: "X-Header-Redirect-New"},
+			},
+		},
+		Transport: http.DefaultTransport,
+	}
+	if err := Forward(route, rec, req); err != nil {
+		t.Fatalf("forward rename header error: %v", err)
+	}
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
 func TestForwardMidSegmentWildcardRewrite(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {

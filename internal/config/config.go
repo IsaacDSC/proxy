@@ -13,13 +13,19 @@ type Config struct {
 	Routes    []Route         `json:"routes"`
 }
 
+type RenameHeaderRule struct {
+	Current string `json:"current"`
+	New     string `json:"new"`
+}
+
 type Route struct {
-	Match       string `json:"match"`
-	Target      string `json:"target"`
-	HeaderName  string `json:"header_name,omitempty"`
-	HeaderValue string `json:"header_value,omitempty"`
-	Rewrite     string `json:"rewrite,omitempty"`
-	Transport   TransportConfig `json:"transport,omitempty"`
+	Match         string              `json:"match"`
+	Target        string              `json:"target"`
+	HeaderName    string              `json:"header_name,omitempty"`
+	HeaderValue   string              `json:"header_value,omitempty"`
+	Rewrite       string              `json:"rewrite,omitempty"`
+	RenameHeaders []RenameHeaderRule  `json:"rename_header,omitempty"`
+	Transport     TransportConfig     `json:"transport,omitempty"`
 }
 
 type CompiledRoute struct {
