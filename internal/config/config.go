@@ -24,6 +24,7 @@ type Route struct {
 	HeaderName    string              `json:"header_name,omitempty"`
 	HeaderValue   string              `json:"header_value,omitempty"`
 	Rewrite       string              `json:"rewrite,omitempty"`
+	Headers       map[string]string   `json:"headers,omitempty"`
 	RenameHeaders []RenameHeaderRule  `json:"rename_header,omitempty"`
 	Transport     TransportConfig     `json:"transport,omitempty"`
 }

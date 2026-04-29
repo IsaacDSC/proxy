@@ -34,6 +34,9 @@
             "header_value": "journey-x",
             "rewrite": "POST /v3/receivables",
             "target": "http://localhost:8000",
+            "headers": {
+                "Other-Header": "other-value"
+            },
             "rename_header": [
                 {
                     "current": "X-Header-Redirect",

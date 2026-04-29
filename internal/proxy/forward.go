@@ -61,6 +61,7 @@ func Forward(route *config.CompiledRoute, w http.ResponseWriter, r *http.Request
 			outReq.Host = targetURL.Host
 			outReq.Method = method
 			removeHopByHopHeaders(outReq.Header)
+			applyStaticHeaders(outReq.Header, route.Headers)
 			applyRenameHeaders(outReq.Header, route.RenameHeaders)
 		},
 		Transport: route.Transport,
@@ -84,6 +85,14 @@ func removeHopByHopHeaders(headers http.Header) {
 		if _, ok := hopByHopHeaders[http.CanonicalHeaderKey(key)]; ok {
 			headers.Del(key)
 		}
+	}
+}
+
+// applyStaticHeaders sets each key-value pair from headers onto the outbound request,
+// overwriting any existing value for that header.
+func applyStaticHeaders(h http.Header, headers map[string]string) {
+	for k, v := range headers {
+		h.Set(k, v)
 	}
 }
 

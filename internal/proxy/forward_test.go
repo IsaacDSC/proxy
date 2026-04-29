@@ -170,6 +170,40 @@ func TestForwardRenameHeader(t *testing.T) {
 	}
 }
 
+func TestForwardStaticHeaders(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Journey") != "journey-x" {
+			t.Fatalf("expected X-Journey to be journey-x, got %q", r.Header.Get("X-Journey"))
+		}
+		if r.Header.Get("X-Other") != "other-value" {
+			t.Fatalf("expected X-Other to be other-value, got %q", r.Header.Get("X-Other"))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "http://proxy.local/ping", nil)
+	rec := httptest.NewRecorder()
+	route := &config.CompiledRoute{
+		Route: config.Route{
+			Target: backend.URL,
+			Headers: map[string]string{
+				"X-Journey": "journey-x",
+				"X-Other":   "other-value",
+			},
+		},
+		Transport: http.DefaultTransport,
+	}
+	if err := Forward(route, rec, req); err != nil {
+		t.Fatalf("forward static headers error: %v", err)
+	}
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
 func TestForwardMidSegmentWildcardRewrite(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
