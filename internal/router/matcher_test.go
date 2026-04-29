@@ -75,13 +75,13 @@ func TestMatchRoute(t *testing.T) {
 			wantTarget: "http://service-x.internal",
 		},
 		{
-			name:   "header mismatch returns nil",
+			name:   "header mismatch falls back to header-less route",
 			method: "PATCH",
 			path:   "/receivables",
 			headers: http.Header{
 				"X-Header-Redirect": []string{"unknown"},
 			},
-			wantTarget: "",
+			wantTarget: "http://service-a.internal",
 		},
 		{
 			name:       "no route returns nil",
@@ -89,6 +89,15 @@ func TestMatchRoute(t *testing.T) {
 			path:       "/does-not-exist",
 			headers:    http.Header{},
 			wantTarget: "",
+		},
+		{
+			name:   "header-less route matched when request carries unrelated tracked header",
+			method: "PATCH",
+			path:   "/receivables",
+			headers: http.Header{
+				"X-Header-Redirect": []string{"outro-valor"},
+			},
+			wantTarget: "http://service-a.internal",
 		},
 	}
 

@@ -9,6 +9,11 @@
     },
     "routes": [
         {
+            "match": "POST /receivables/v1/process",
+            "rewrite": "POST /receivables/v2/process",
+            "target": "http://localhost:8000"
+        },
+        {
             "match": "DELETE /receivables/*/items",
             "rewrite": "DELETE /v2/receivables/*/product_items",
             "target": "http://localhost:8000"

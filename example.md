@@ -71,3 +71,9 @@ Deve redirecionar para o target `http://localhost:8000` com rewrite para
 ```bash
 curl -i -X DELETE "http://localhost:8080/receivables/abc-123/items"
 ```
+
+
+curl -i -X POST "http://localhost:8080/receivables/v1/process" \
+  -H "X-Header-Redirect: outro-valor" \
+  -H "Content-Type: application/json" \
+  -d '{"route":"fallback"}'

@@ -66,9 +66,18 @@ func (m *Matcher) MatchRoute(r *http.Request) *config.CompiledRoute {
 		}
 	}
 
-	//  exact match
+	//  exact match (with header, if any recognised header was found in the request)
 	if route, ok := m.rules[key(receivedRoute)]; ok {
 		return &route
+	}
+
+	// fallback: header present but no header-specific route matched — try the
+	// same method+path without header requirements.
+	if receivedRoute.HeaderName != "" {
+		noHeaderKey := fmt.Sprintf("%s:%s::", receivedRoute.Method, receivedRoute.PathPattern)
+		if route, ok := m.rules[noHeaderKey]; ok {
+			return &route
+		}
 	}
 
 	// no exact match: check wildcard routes in specificity order
