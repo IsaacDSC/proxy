@@ -14,25 +14,51 @@ Exemplo:
 
 ```json
 {
-  "routes": [
-    {
-      "match": "PATCH /receivables",
-      "rewrite": "PUT /v2/receivables",
-      "target": "http://localhost:9001"
+    "transport": {
+        "dial_timeout": "30s",
+        "keep_alive": "30s",
+        "max_idle_conns": 100,
+        "max_conns_per_host": 100,
+        "idle_conn_timeout": "90s",
+        "expect_continue_timeout": "1s"
     },
-    {
-      "match": "PATCH /receivables/*",
-      "rewrite": "PUT /v2/receivables/*",
-      "target": "http://localhost:9002"
-    },
-    {
-      "match": "PATCH /receivables",
-      "header_name": "X-Header-Redirect",
-      "header_value": "journey-x",
-      "rewrite": "POST /v3/receivables",
-      "target": "http://localhost:9003"
-    }
-  ]
+    "routes": [
+        {
+            "match": "DELETE /receivables/*/items",
+            "rewrite": "DELETE /v2/receivables/*/product_items",
+            "target": "http://localhost:8000"
+        },
+        {
+            "match": "DELETE /receivables/*",
+            "rewrite": "DELETE /v2/receivables/*",
+            "target": "http://localhost:8000"
+        },
+        {
+            "match": "PATCH /receivables",
+            "rewrite": "PUT /v2/receivables",
+            "target": "http://localhost:8000"
+        },
+        {
+            "match": "PATCH /receivables/*",
+            "rewrite": "PUT /v2/receivables/*",
+            "target": "http://localhost:8000"
+        },
+        {
+            "match": "PATCH /receivables",
+            "header_name": "X-Header-Redirect",
+            "header_value": "journey-x",
+            "rewrite": "POST /v3/receivables",
+            "target": "http://localhost:8000",
+            "transport": {
+                "dial_timeout": "5s",
+                "keep_alive": "15s",
+                "max_idle_conns": 10,
+                "max_conns_per_host": 10,
+                "idle_conn_timeout": "30s",
+                "expect_continue_timeout": "500ms"
+            }
+        }
+    ]
 }
 ```
 

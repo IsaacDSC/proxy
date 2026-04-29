@@ -33,7 +33,15 @@
             "header_name": "X-Header-Redirect",
             "header_value": "journey-x",
             "rewrite": "POST /v3/receivables",
-            "target": "http://localhost:8000"
+            "target": "http://localhost:8000",
+            "transport": {
+                "dial_timeout": "5s",
+                "keep_alive": "15s",
+                "max_idle_conns": 10,
+                "max_conns_per_host": 10,
+                "idle_conn_timeout": "30s",
+                "expect_continue_timeout": "500ms"
+            }
         }
     ]
 }

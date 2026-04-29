@@ -28,10 +28,12 @@ func NewMatcher(routes []config.CompiledRoute) *Matcher {
 		if route.HeaderName != "" && route.HeaderValue != "" {
 			m.expectedHeaders = append(m.expectedHeaders, route.HeaderName)
 		}
-		m.rules[key(route)] = route
+
 		if route.IsWildcard {
 			m.wildcardRoutes = append(m.wildcardRoutes, route)
 		}
+
+		m.rules[key(route)] = route
 	}
 
 	// Sort wildcard routes so mid-segment patterns (more specific) are checked before
