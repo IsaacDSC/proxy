@@ -102,7 +102,7 @@ func applyStaticHeaders(h http.Header, headers map[string]string) {
 func applyRenameHeaders(headers http.Header, rules []config.RenameHeaderRule) {
 	for _, rule := range rules {
 		current := http.CanonicalHeaderKey(rule.Current)
-		newKey := http.CanonicalHeaderKey(rule.New)
+		newKey := http.CanonicalHeaderKey(rule.Replace)
 		if values := headers[current]; len(values) > 0 {
 			headers[newKey] = values
 			delete(headers, current)

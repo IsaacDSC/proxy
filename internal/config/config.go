@@ -15,34 +15,34 @@ type Config struct {
 
 type RenameHeaderRule struct {
 	Current string `json:"current"`
-	New     string `json:"new"`
+	Replace string `json:"replace"`
 }
 
 type Route struct {
-	Match         string              `json:"match"`
-	Target        string              `json:"target"`
-	HeaderName    string              `json:"header_name,omitempty"`
-	HeaderValue   string              `json:"header_value,omitempty"`
-	Rewrite       string              `json:"rewrite,omitempty"`
-	Headers       map[string]string   `json:"headers,omitempty"`
-	RenameHeaders []RenameHeaderRule  `json:"rename_header,omitempty"`
-	Transport     TransportConfig     `json:"transport,omitempty"`
+	Match         string             `json:"match"`
+	Target        string             `json:"target"`
+	HeaderName    string             `json:"header_name,omitempty"`
+	HeaderValue   string             `json:"header_value,omitempty"`
+	Rewrite       string             `json:"rewrite,omitempty"`
+	Headers       map[string]string  `json:"headers,omitempty"`
+	RenameHeaders []RenameHeaderRule `json:"rename_header,omitempty"`
+	Transport     TransportConfig    `json:"transport,omitempty"`
 }
 
 type CompiledRoute struct {
 	Route
-	Transport            http.RoundTripper
-	Method               string
-	PathPattern          string
-	IsWildcard           bool
-	WildcardBase         string
-	WildcardSuffix       string
-	RewriteMethod        string
-	RewritePath          string
-	RewriteIsWildcard    bool
-	RewriteWildcardBase  string
+	Transport             http.RoundTripper
+	Method                string
+	PathPattern           string
+	IsWildcard            bool
+	WildcardBase          string
+	WildcardSuffix        string
+	RewriteMethod         string
+	RewritePath           string
+	RewriteIsWildcard     bool
+	RewriteWildcardBase   string
 	RewriteWildcardSuffix string
-	Index                int
+	Index                 int
 }
 
 type CompiledConfig struct {

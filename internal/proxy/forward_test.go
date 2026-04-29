@@ -155,7 +155,7 @@ func TestForwardRenameHeader(t *testing.T) {
 		Route: config.Route{
 			Target: backend.URL,
 			RenameHeaders: []config.RenameHeaderRule{
-				{Current: "X-Header-Redirect", New: "X-Header-Redirect-New"},
+				{Current: "X-Header-Redirect", Replace: "X-Header-Redirect-New"},
 			},
 		},
 		Transport: http.DefaultTransport,

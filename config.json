@@ -45,7 +45,7 @@
             "rename_header": [
                 {
                     "current": "X-Header-Redirect",
-                    "new": "X-Header-Redirect-New"
+                    "replace": "X-Header-Redirect-New"
                 }
             ],
             "transport": {
