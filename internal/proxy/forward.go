@@ -1,12 +1,21 @@
 package proxy
 
 import (
-	"io"
+	"context"
+	"errors"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"github.com/IsaacDSC/proxy/internal/config"
 )
 
+// hopByHopHeaders lists HTTP/1.1 hop-by-hop headers (RFC 7230). They describe only the
+// connection between client and this proxy, not the separate TCP hop to the upstream.
+// Forwarding them would leak wrong connection semantics (e.g. Connection, Upgrade),
+// proxy-specific auth (Proxy-*), or framing meant for the inbound body (Transfer-Encoding).
+// We strip them from the outbound request before contacting the backend.
 var hopByHopHeaders = map[string]struct{}{
 	"Connection":          {},
 	"Proxy-Connection":    {},
@@ -19,12 +28,11 @@ var hopByHopHeaders = map[string]struct{}{
 	"Upgrade":             {},
 }
 
-func Forward(client *http.Client, targetBase string, w http.ResponseWriter, r *http.Request) error {
-	return ForwardWithRewrite(client, targetBase, "", "", w, r)
-}
+// Forward proxies r according to route (rewrite rules, transport, target).
+func Forward(route *config.CompiledRoute, w http.ResponseWriter, r *http.Request) error {
+	rewriteMethod, rewritePath := route.ResolveRewrite(r.Method, r.URL.Path)
 
-func ForwardWithRewrite(client *http.Client, targetBase string, rewriteMethod string, rewritePath string, w http.ResponseWriter, r *http.Request) error {
-	targetURL, err := url.Parse(strings.TrimSpace(targetBase))
+	targetURL, err := url.Parse(strings.TrimSpace(route.Target))
 	if err != nil {
 		return err
 	}
@@ -42,37 +50,34 @@ func ForwardWithRewrite(client *http.Client, targetBase string, rewriteMethod st
 		method = rewriteMethod
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), method, targetURL.String(), r.Body)
-	if err != nil {
+	var proxyErr error
+	rp := &httputil.ReverseProxy{
+		Director: func(outReq *http.Request) {
+			outReq.URL.Scheme = targetURL.Scheme
+			outReq.URL.Host = targetURL.Host
+			outReq.URL.Path = targetURL.Path
+			outReq.URL.RawPath = targetURL.RawPath
+			outReq.URL.RawQuery = targetURL.RawQuery
+			outReq.Host = targetURL.Host
+			outReq.Method = method
+			removeHopByHopHeaders(outReq.Header)
+		},
+		Transport: route.Transport,
+		ErrorHandler: func(_ http.ResponseWriter, _ *http.Request, err error) {
+			proxyErr = err
+		},
+	}
+	rp.ServeHTTP(w, r)
+	if proxyErr != nil {
+		return proxyErr
+	}
+	if err := r.Context().Err(); errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-
-	copyHeaders(req.Header, r.Header)
-	removeHopByHopHeaders(req.Header)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	copyHeaders(w.Header(), resp.Header)
-	removeHopByHopHeaders(w.Header())
-
-	w.WriteHeader(resp.StatusCode)
-	_, err = io.Copy(w, resp.Body)
-	return err
+	return nil
 }
 
-func copyHeaders(dst http.Header, src http.Header) {
-	for key, values := range src {
-		dst.Del(key)
-		for _, v := range values {
-			dst.Add(key, v)
-		}
-	}
-}
-
+// removeHopByHopHeaders deletes hop-by-hop header fields from headers before forwarding.
 func removeHopByHopHeaders(headers http.Header) {
 	for key := range headers {
 		if _, ok := hopByHopHeaders[http.CanonicalHeaderKey(key)]; ok {

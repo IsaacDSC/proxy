@@ -1,115 +1,96 @@
 package router
 
 import (
+	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/IsaacDSC/proxy/internal/config"
 )
 
 type Matcher struct {
-	exactByMethodPath map[string]map[string][]*config.CompiledRoute
-	wildcardsByMethod map[string][]*config.CompiledRoute
+	expectedHeaders []string
+	rules           map[string]config.CompiledRoute
+	wildcardRoutes  []config.CompiledRoute
+}
+
+func key(route config.CompiledRoute) string {
+	return fmt.Sprintf("%s:%s:%s:%s", route.Method, route.PathPattern, route.HeaderName, route.HeaderValue)
 }
 
 func NewMatcher(routes []config.CompiledRoute) *Matcher {
-	matcher := &Matcher{
-		exactByMethodPath: make(map[string]map[string][]*config.CompiledRoute),
-		wildcardsByMethod: make(map[string][]*config.CompiledRoute),
+	m := &Matcher{
+		rules: make(map[string]config.CompiledRoute),
 	}
 
-	for idx := range routes {
-		route := &routes[idx]
-		method := strings.ToUpper(route.Method)
-
+	for _, route := range routes {
+		if route.HeaderName != "" && route.HeaderValue != "" {
+			m.expectedHeaders = append(m.expectedHeaders, route.HeaderName)
+		}
+		m.rules[key(route)] = route
 		if route.IsWildcard {
-			matcher.wildcardsByMethod[method] = append(matcher.wildcardsByMethod[method], route)
-			continue
+			m.wildcardRoutes = append(m.wildcardRoutes, route)
 		}
-
-		if _, ok := matcher.exactByMethodPath[method]; !ok {
-			matcher.exactByMethodPath[method] = make(map[string][]*config.CompiledRoute)
-		}
-		matcher.exactByMethodPath[method][route.PathPattern] = append(matcher.exactByMethodPath[method][route.PathPattern], route)
 	}
 
-	return matcher
+	// Sort wildcard routes so mid-segment patterns (more specific) are checked before
+	// trailing wildcards. Within the same specificity, preserve config order by Index.
+	sort.Slice(m.wildcardRoutes, func(i, j int) bool {
+		iMid := m.wildcardRoutes[i].WildcardSuffix != ""
+		jMid := m.wildcardRoutes[j].WildcardSuffix != ""
+		if iMid != jMid {
+			return iMid
+		}
+		return m.wildcardRoutes[i].Index < m.wildcardRoutes[j].Index
+	})
+
+	return m
 }
 
-func (m *Matcher) MatchRoute(method string, path string, headers http.Header) *config.CompiledRoute {
-	var headerExact *config.CompiledRoute
-	var headerWildcard *config.CompiledRoute
-	var plainExact *config.CompiledRoute
-	var plainWildcard *config.CompiledRoute
+func (m *Matcher) MatchRoute(r *http.Request) *config.CompiledRoute {
+	receivedRoute := config.CompiledRoute{
+		Method:      r.Method,
+		PathPattern: r.URL.Path,
+	}
 
-	normalizedMethod := strings.ToUpper(method)
+	//  set headers if present
+	if r.Header != nil {
+		for _, headerName := range m.expectedHeaders {
+			if headerValue := r.Header.Get(headerName); headerValue != "" {
+				receivedRoute.HeaderName = headerName
+				receivedRoute.HeaderValue = headerValue
+			}
+		}
+	}
 
-	if methodPaths, ok := m.exactByMethodPath[normalizedMethod]; ok {
-		for _, route := range methodPaths[path] {
-			hasHeaderRule := route.HeaderName != "" && route.HeaderValue != ""
-			if hasHeaderRule {
-				if headers.Get(route.HeaderName) != route.HeaderValue {
-					continue
-				}
-				if headerExact == nil {
-					headerExact = route
-				}
+	//  exact match
+	if route, ok := m.rules[key(receivedRoute)]; ok {
+		return &route
+	}
+
+	// no exact match: check wildcard routes in specificity order
+	for _, route := range m.wildcardRoutes {
+		if route.Method != r.Method {
+			continue
+		}
+		if !strings.HasPrefix(r.URL.Path, route.WildcardBase+"/") {
+			continue
+		}
+		if route.WildcardSuffix != "" {
+			// mid-segment wildcard: path must also end with the suffix and have at
+			// least one character as the wildcard segment between base and suffix.
+			if !strings.HasSuffix(r.URL.Path, route.WildcardSuffix) {
 				continue
 			}
-
-			if plainExact == nil {
-				plainExact = route
-			}
-		}
-	}
-
-	for _, route := range m.wildcardsByMethod[normalizedMethod] {
-		if !matchPath(*route, path) {
-			continue
-		}
-
-		hasHeaderRule := route.HeaderName != "" && route.HeaderValue != ""
-		if hasHeaderRule {
-			if headers.Get(route.HeaderName) != route.HeaderValue {
+			minLen := len(route.WildcardBase) + len(route.WildcardSuffix) + 1
+			if len(r.URL.Path) <= minLen {
 				continue
 			}
-			if headerWildcard == nil {
-				headerWildcard = route
-			}
-			continue
 		}
-
-		if plainWildcard == nil {
-			plainWildcard = route
-		}
+		r := route
+		return &r
 	}
 
-	switch {
-	case headerExact != nil:
-		return headerExact
-	case headerWildcard != nil:
-		return headerWildcard
-	case plainExact != nil:
-		return plainExact
-	case plainWildcard != nil:
-		return plainWildcard
-	default:
-		return nil
-	}
-}
-
-func MatchRoute(routes []config.CompiledRoute, method string, path string, headers http.Header) *config.CompiledRoute {
-	return NewMatcher(routes).MatchRoute(method, path, headers)
-}
-
-func matchPath(route config.CompiledRoute, requestPath string) bool {
-	if !route.IsWildcard {
-		return route.PathPattern == requestPath
-	}
-
-	base := route.WildcardBase
-	if requestPath == base {
-		return false
-	}
-	return strings.HasPrefix(requestPath, base+"/")
+	return nil
 }

@@ -54,3 +54,20 @@ curl -i -X PATCH "http://localhost:8080/receivables" \
 curl -i -X GET "http://localhost:8080/does-not-exist"
 ```
 
+## 6) Wildcard DELETE (`DELETE /receivables/*`)
+
+Deve redirecionar para o target `http://localhost:8000` com rewrite para
+`DELETE /v2/receivables/*`, preservando o sufixo do path.
+
+```bash
+curl -i -X DELETE "http://localhost:8080/receivables/abc-123"
+```
+
+## 7) Wildcard DELETE (`DELETE /receivables/*/product_items`)
+
+Deve redirecionar para o target `http://localhost:8000` com rewrite para
+`DELETE /v2/receivables/*`, preservando o sufixo do path.
+
+```bash
+curl -i -X DELETE "http://localhost:8080/receivables/abc-123/items"
+```

@@ -3,12 +3,14 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 )
 
 type Config struct {
-	Routes []Route `json:"routes"`
+	Transport TransportConfig `json:"transport,omitempty"`
+	Routes    []Route         `json:"routes"`
 }
 
 type Route struct {
@@ -17,19 +19,23 @@ type Route struct {
 	HeaderName  string `json:"header_name,omitempty"`
 	HeaderValue string `json:"header_value,omitempty"`
 	Rewrite     string `json:"rewrite,omitempty"`
+	Transport   TransportConfig `json:"transport,omitempty"`
 }
 
 type CompiledRoute struct {
 	Route
-	Method              string
-	PathPattern         string
-	IsWildcard          bool
-	WildcardBase        string
-	RewriteMethod       string
-	RewritePath         string
-	RewriteIsWildcard   bool
-	RewriteWildcardBase string
-	Index               int
+	Transport            http.RoundTripper
+	Method               string
+	PathPattern          string
+	IsWildcard           bool
+	WildcardBase         string
+	WildcardSuffix       string
+	RewriteMethod        string
+	RewritePath          string
+	RewriteIsWildcard    bool
+	RewriteWildcardBase  string
+	RewriteWildcardSuffix string
+	Index                int
 }
 
 type CompiledConfig struct {
@@ -72,28 +78,31 @@ func Compile(cfg Config) (CompiledConfig, error) {
 			return CompiledConfig{}, fmt.Errorf("route %d invalid rewrite: %w", i, err)
 		}
 
-		isWildcard := strings.HasSuffix(path, "/*")
-		wildcardBase := ""
-		if isWildcard {
-			wildcardBase = strings.TrimSuffix(path, "/*")
-		}
-		rewriteIsWildcard := strings.HasSuffix(rewritePath, "/*")
-		rewriteWildcardBase := ""
-		if rewriteIsWildcard {
-			rewriteWildcardBase = strings.TrimSuffix(rewritePath, "/*")
+		isWildcard := strings.Contains(path, "/*")
+		wildcardBase, wildcardSuffix := parseWildcardParts(path)
+		rewriteIsWildcard := strings.Contains(rewritePath, "/*")
+		rewriteWildcardBase, rewriteWildcardSuffix := parseWildcardParts(rewritePath)
+
+		merged := mergeTransport(cfg.Transport, route.Transport)
+		rt, err := NewHTTPTransport(merged)
+		if err != nil {
+			return CompiledConfig{}, fmt.Errorf("route %d transport: %w", i, err)
 		}
 
 		compiled = append(compiled, CompiledRoute{
-			Route:               route,
-			Method:              method,
-			PathPattern:         path,
-			IsWildcard:          isWildcard,
-			WildcardBase:        wildcardBase,
-			RewriteMethod:       rewriteMethod,
-			RewritePath:         rewritePath,
-			RewriteIsWildcard:   rewriteIsWildcard,
-			RewriteWildcardBase: rewriteWildcardBase,
-			Index:               i,
+			Route:                 route,
+			Transport:             rt,
+			Method:                method,
+			PathPattern:           path,
+			IsWildcard:            isWildcard,
+			WildcardBase:          wildcardBase,
+			WildcardSuffix:        wildcardSuffix,
+			RewriteMethod:         rewriteMethod,
+			RewritePath:           rewritePath,
+			RewriteIsWildcard:     rewriteIsWildcard,
+			RewriteWildcardBase:   rewriteWildcardBase,
+			RewriteWildcardSuffix: rewriteWildcardSuffix,
+			Index:                 i,
 		})
 	}
 
@@ -127,12 +136,32 @@ func (r CompiledRoute) ResolveRewrite(requestMethod string, requestPath string) 
 
 	if r.IsWildcard && r.RewriteIsWildcard {
 		if strings.HasPrefix(requestPath, r.WildcardBase+"/") {
-			suffix := strings.TrimPrefix(requestPath, r.WildcardBase)
-			return method, r.RewriteWildcardBase + suffix
+			rest := strings.TrimPrefix(requestPath, r.WildcardBase)
+			if r.WildcardSuffix != "" {
+				// mid-segment: extract just the wildcard segment by stripping the suffix
+				wildcardPart := strings.TrimSuffix(rest, r.WildcardSuffix)
+				return method, r.RewriteWildcardBase + wildcardPart + r.RewriteWildcardSuffix
+			}
+			return method, r.RewriteWildcardBase + rest
 		}
 	}
 
 	return method, r.RewritePath
+}
+
+// parseWildcardParts splits a path containing "/*" into its base and suffix components.
+// For a trailing wildcard "/prefix/*" it returns ("/prefix", "").
+// For a mid-segment wildcard "/prefix/*/suffix" it returns ("/prefix", "/suffix").
+// For paths without a wildcard it returns ("", "").
+func parseWildcardParts(path string) (base string, suffix string) {
+	idx := strings.Index(path, "/*/")
+	if idx >= 0 {
+		return path[:idx], path[idx+2:]
+	}
+	if strings.HasSuffix(path, "/*") {
+		return strings.TrimSuffix(path, "/*"), ""
+	}
+	return "", ""
 }
 
 func parseMatch(match string) (method string, path string, err error) {
@@ -151,8 +180,17 @@ func parseMatch(match string) (method string, path string, err error) {
 	if !strings.HasPrefix(path, "/") {
 		return "", "", fmt.Errorf("path must start with '/'")
 	}
-	if strings.Contains(path, "*") && !strings.HasSuffix(path, "/*") {
-		return "", "", fmt.Errorf("only trailing wildcard '/*' is supported")
+	if strings.Count(path, "*") > 1 {
+		return "", "", fmt.Errorf("at most one wildcard '*' is supported")
+	}
+	if strings.Contains(path, "*") {
+		idx := strings.Index(path, "*")
+		if idx == 0 || path[idx-1] != '/' {
+			return "", "", fmt.Errorf("wildcard '*' must be a full path segment (e.g. /prefix/* or /prefix/*/suffix)")
+		}
+		if idx < len(path)-1 && path[idx+1] != '/' {
+			return "", "", fmt.Errorf("wildcard '*' must be a full path segment (e.g. /prefix/* or /prefix/*/suffix)")
+		}
 	}
 
 	return method, path, nil

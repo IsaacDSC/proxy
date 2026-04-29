@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/IsaacDSC/proxy/internal/config"
 )
 
 func TestForward(t *testing.T) {
@@ -41,7 +43,11 @@ func TestForward(t *testing.T) {
 	req.Header.Set("X-Header-Redirect", "journey-x")
 
 	rec := httptest.NewRecorder()
-	if err := Forward(backend.Client(), backend.URL, rec, req); err != nil {
+	rt := &config.CompiledRoute{
+		Route:     config.Route{Target: backend.URL},
+		Transport: http.DefaultTransport,
+	}
+	if err := Forward(rt, rec, req); err != nil {
 		t.Fatalf("forward error: %v", err)
 	}
 
@@ -58,7 +64,7 @@ func TestForward(t *testing.T) {
 	}
 }
 
-func TestForwardWithRewrite(t *testing.T) {
+func TestForwardRewrite(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Fatalf("expected method PUT, got %s", r.Method)
@@ -73,8 +79,94 @@ func TestForwardWithRewrite(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPatch, "http://proxy.local/receivables/123", strings.NewReader(`{"id":"123"}`))
 	rec := httptest.NewRecorder()
-	if err := ForwardWithRewrite(backend.Client(), backend.URL, http.MethodPut, "/v2/receivables/123", rec, req); err != nil {
+	route := &config.CompiledRoute{
+		Route: config.Route{
+			Target: backend.URL,
+		},
+		Transport:     http.DefaultTransport,
+		RewriteMethod: http.MethodPut,
+		RewritePath:   "/v2/receivables/123",
+	}
+	if err := Forward(route, rec, req); err != nil {
 		t.Fatalf("forward with rewrite error: %v", err)
+	}
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", resp.StatusCode)
+	}
+}
+
+func TestForwardWildcardRewrite(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("expected method DELETE, got %s", r.Method)
+		}
+		if r.URL.Path != "/v2/receivables/abc-123" {
+			t.Fatalf("expected path /v2/receivables/abc-123, got %s", r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer backend.Close()
+
+	// Simulates: DELETE /receivables/* → DELETE /v2/receivables/* preserving suffix.
+	req := httptest.NewRequest(http.MethodDelete, "http://proxy.local/receivables/abc-123", nil)
+	rec := httptest.NewRecorder()
+	route := &config.CompiledRoute{
+		Route:               config.Route{Target: backend.URL},
+		Transport:           http.DefaultTransport,
+		Method:              http.MethodDelete,
+		PathPattern:         "/receivables/*",
+		IsWildcard:          true,
+		WildcardBase:        "/receivables",
+		RewriteMethod:       http.MethodDelete,
+		RewritePath:         "/v2/receivables/*",
+		RewriteIsWildcard:   true,
+		RewriteWildcardBase: "/v2/receivables",
+	}
+	if err := Forward(route, rec, req); err != nil {
+		t.Fatalf("forward wildcard rewrite error: %v", err)
+	}
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", resp.StatusCode)
+	}
+}
+
+func TestForwardMidSegmentWildcardRewrite(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("expected method DELETE, got %s", r.Method)
+		}
+		if r.URL.Path != "/v2/receivables/abc-123/product_items" {
+			t.Fatalf("expected path /v2/receivables/abc-123/product_items, got %s", r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer backend.Close()
+
+	// Simulates: DELETE /receivables/*/items → DELETE /v2/receivables/*/product_items
+	req := httptest.NewRequest(http.MethodDelete, "http://proxy.local/receivables/abc-123/items", nil)
+	rec := httptest.NewRecorder()
+	route := &config.CompiledRoute{
+		Route:                 config.Route{Target: backend.URL},
+		Transport:             http.DefaultTransport,
+		Method:                http.MethodDelete,
+		PathPattern:           "/receivables/*/items",
+		IsWildcard:            true,
+		WildcardBase:          "/receivables",
+		WildcardSuffix:        "/items",
+		RewriteMethod:         http.MethodDelete,
+		RewritePath:           "/v2/receivables/*/product_items",
+		RewriteIsWildcard:     true,
+		RewriteWildcardBase:   "/v2/receivables",
+		RewriteWildcardSuffix: "/product_items",
+	}
+	if err := Forward(route, rec, req); err != nil {
+		t.Fatalf("forward mid-segment wildcard rewrite error: %v", err)
 	}
 
 	resp := rec.Result()

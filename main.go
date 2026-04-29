@@ -6,6 +6,9 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/IsaacDSC/proxy/internal/config"
@@ -15,6 +18,8 @@ import (
 )
 
 func main() {
+	startTime := time.Now()
+
 	configPath := flag.String("config", "config.json", "path to proxy config json")
 	listenAddr := flag.String("listen", ":8080", "address to listen on")
 	flag.Parse()
@@ -27,20 +32,16 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
 	matcher := router.NewMatcher(compiled.Routes)
 
 	r.NoRoute(func(c *gin.Context) {
-		route := matcher.MatchRoute(c.Request.Method, c.Request.URL.Path, c.Request.Header)
+		route := matcher.MatchRoute(c.Request)
 		if route == nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "route not found"})
 			return
 		}
 
-		rewriteMethod, rewritePath := route.ResolveRewrite(c.Request.Method, c.Request.URL.Path)
-		if err := proxy.ForwardWithRewrite(client, route.Target, rewriteMethod, rewritePath, c.Writer, c.Request); err != nil {
+		if err := proxy.Forward(route, c.Writer, c.Request); err != nil {
 			status := http.StatusBadGateway
 			if errors.Is(err, context.DeadlineExceeded) {
 				status = http.StatusGatewayTimeout
@@ -49,8 +50,28 @@ func main() {
 		}
 	})
 
-	log.Printf("proxy listening on %s", *listenAddr)
-	if err := r.Run(*listenAddr); err != nil {
-		log.Fatalf("server failed: %v", err)
+	srv := &http.Server{
+		Addr:    *listenAddr,
+		Handler: r,
 	}
+
+	go func() {
+		log.Printf("proxy listening on %s (started in %s)", *listenAddr, time.Since(startTime).Round(time.Millisecond))
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server failed: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("server forced to shutdown: %v", err)
+	}
+	log.Println("server stopped")
 }
